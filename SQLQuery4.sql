@@ -1,4 +1,4 @@
--- a) Bài tập về Store Procedure:
+﻿-- a) Bài tập về Store Procedure:
 -- 1. In ra dòng ‘Xin chào’.
 CREATE PROC hello
 AS BEGIN
@@ -668,14 +668,8 @@ BEGIN
 	SELECT @viTri = VITRI, @so = SO, @maQG = MAQG, @maCLB = MACLB
 	FROM inserted
 
-	SELECT @count = COUNT(MACT)
-	FROM dbo.CAUTHU
-	WHERE MACLB = @maCLB
-	AND MAQG in (
-		SELECT MAQG
-		FROM dbo.QUOCGIA
-		WHERE TENQG <> N'Việt Nam'
-	)
+	
+	
 
 	declare @check int = 1
 
@@ -688,21 +682,22 @@ BEGIN
 	end
 
 	-- Bai 2
-	if @so in (select SO from dbo.CAUTHU)
-	begin
+	SELECT @count = COUNT(SO) FROM dbo.CAUTHU WHERE SO = @so AND MACLB = @maCLB
+	if @count > 1
+	BEGIN
 		print(N'Số áo đã tồn tại')
 		set @check = 0
 		rollback Transaction 
 	end
 	
 	-- Bai 4
-	if @maQG in (select MAQG from dbo.QUOCGIA where TENQG <> N'Việt Nam')
-		if @count >= 8
-		begin
-			print(N'Tối đa cầu thủ nước ngoài')
-			set @check = 0
-			rollback Transaction 
-		end
+	SELECT @count = COUNT(MACT)	FROM dbo.CAUTHU	WHERE MACLB = @maCLB AND MAQG in (SELECT MAQG FROM dbo.QUOCGIA WHERE TENQG <> N'Việt Nam')
+	if @count > 8
+	BEGIN
+		print(N'Tối đa cầu thủ nước ngoài')
+		set @check = 0
+		rollback Transaction 
+	END
 			
 	-- Bai 3
 	if @check = 1
@@ -711,30 +706,121 @@ END
 GO
 
 
-
-
-
 -- 5. Khi thêm tên quốc gia, kiểm tra tên quốc gia không được trùng với tên
 -- quốc gia đã có.
+CREATE TRIGGER triInsertQuocGia ON dbo.QUOCGIA
+FOR INSERT
+AS
+BEGIN
+	declare @tenQG NVARCHAR(60), @maQG varchar(5)
+	SELECT @tenQG = TENQG, @maQG = MAQG
+	FROM inserted
+
+	IF @tenQG IN (SELECT TENQG FROM dbo.QUOCGIA WHERE TENQG = @tenQG AND MAQG <> @maQG)
+	BEGIN
+		PRINT(N'Tên quốc gia đã tồn tại')
+		ROLLBACK TRANSACTION
+    END
+	ELSE
+		PRINT(N'Thêm quốc gia thành công')
+END
+GO
 
 
 -- 6. Khi thêm tên tỉnh thành, kiểm tra tên tỉnh thành không được trùng với
 -- tên tỉnh thành đã có.
+CREATE TRIGGER triInsertTinh ON dbo.TINH
+FOR INSERT
+AS
+BEGIN
+	declare @tenTinh NVARCHAR(100), @maTinh varchar(5)
+	SELECT @tenTinh = TENTINH, @maTinh = MATINH
+	FROM Inserted
+
+	IF @tenTinh IN (SELECT TENTINH FROM dbo.TINH WHERE TENTINH = @tenTinh AND MATINH <> @maTinh)
+	BEGIN
+		PRINT(N'Tên tỉnh đã tồn tại')
+		ROLLBACK TRANSACTION
+    END
+	ELSE
+		PRINT(N'Thêm tỉnh thành công')
+END
+GO
 
 
 -- 7. Không cho sửa kết quả của các trận đã diễn ra.
+CREATE TRIGGER triUpdateTranDau ON dbo.TRANDAU
+FOR UPDATE
+AS
+BEGIN
+	DECLARE	@ketqua1 VARCHAR(5)
+	DECLARE	@ketqua2 VARCHAR(5)
+
+	Select @ketqua1 = Inserted.KETQUA, @ketqua2 = Deleted.KETQUA
+	FROM inserted join deleted
+	ON (Inserted.MATRAN = Deleted.MATRAN)
+
+	IF (@ketqua1 <> @ketqua2)
+		BEGIN
+			PRINT(N'KHÔNG ĐƯỢC CHỈNH SỬA KẾT QUẢ CỦA TRẬN ĐẤU')
+			ROLLBACK TRANSACTION
+		END
+END
+GO
 
 
 -- 8. Khi phân công huấn luyện viên cho câu lạc bộ:
 -- a. Kiểm tra vai trò của huấn luyện viên chỉ thuộc một trong các vai trò sau:
 -- HLV chính, HLV phụ, HLV thể lực, HLV thủ môn .
 -- b. Kiểm tra mỗi câu lạc bộ chỉ có tối đa 2 HLV chính.
+CREATE TRIGGER triInsertHLV_CLB ON dbo.HLV_CLB
+FOR INSERT
+AS
+BEGIN
+	DECLARE @vaiTro NVARCHAR(100), @maCLB VARCHAR(5)
+	SELECT @vaiTro = VAITRO, @maCLB = MACLB
+	FROM Inserted
+
+	IF @vaiTro NOT IN (N'HLV chính', N'HLV phụ', N'HLV thể lực', N'HLV thủ môn')
+	BEGIN
+	    PRINT(N'Vai trò của huấn luyện viên không thuộc trong các vai trò sau: HLV Chính, HLV phụ, HLV thể lực, HLV thủ môn')
+		ROLLBACK TRANSACTION
+	END
+
+	DECLARE @count INT
+	SELECT @count = COUNT(MAHLV) FROM dbo.HLV_CLB WHERE MACLB = @maCLB AND VAITRO = N'HLV Chính'
+	IF @count > 2
+	BEGIN
+	    PRINT(N'Mỗi câu lạc bộ chỉ có tối đa 2 HLV chính')
+		ROLLBACK TRANSACTION
+	END
+END
+GO
 
 
 -- 9. Khi thêm mới một câu lạc bộ thì kiểm tra xem đã có câu lạc bộ trùng tên
 -- với câu lạc bộ vừa được thêm hay không?
 -- c. chỉ thông báo vẫn cho insert.
 -- d. thông báo và không cho insert.
+CREATE TRIGGER triInsertCauLacBo ON dbo.CAULACBO
+FOR INSERT
+AS
+BEGIN
+    declare @tenCLB NVARCHAR(100), @maCLB varchar(5)
+	SELECT @tenCLB = TENCLB, @maCLB = MACLB
+	FROM Inserted
+
+	IF EXISTS (SELECT TENCLB FROM dbo.CAULACBO WHERE TENCLB = @tenCLB AND MACLB <> @maCLB)
+	BEGIN
+		PRINT N'Tên CLB đã tồn tại';
+
+		-- không cho insert
+		ROLLBACK TRANSACTION
+    END
+	ELSE
+		PRINT(N'Thêm CLB thành công')
+END
+GO
 
 
 -- 10. Khi sửa tên cầu thủ cho một (hoặc nhiều) cầu thủ thì in ra:
@@ -745,3 +831,31 @@ GO
 -- i. câu thông báo bằng Tiếng Việt:
 -- ‘Vừa sửa thông tin của cầu thủ có mã số xxx’ với xxx là mã cầu thủ
 -- vừa được sửa.
+CREATE TRIGGER triUpdateCauThu ON dbo.CAUTHU
+FOR	UPDATE
+AS
+	DECLARE @c CURSOR
+	DECLARE @maCauThu INT, @hoTen_OLD NVARCHAR(100), @hoTen_NEW NVARCHAR(100);
+BEGIN
+	SET @c = CURSOR FOR
+	SELECT Inserted.MACT, Inserted.HOTEN, Deleted.HOTEN
+	FROM Inserted, Deleted
+	WHERE Inserted.MACT = Deleted.MACT
+
+	OPEN @c
+	FETCH NEXT FROM @c INTO @maCauThu, @hoTen_NEW, @hoTen_OLD
+
+	WHILE @@FETCH_STATUS = 0
+	BEGIN
+	    PRINT N'Vừa sửa thông tin của cầu thủ có mã số ' + CAST(@maCauThu AS NVARCHAR(10))
+		PRINT N'Tên cũ: ' +  @hoTen_OLD
+		PRINT N'Tên mới: ' +  @hoTen_NEW
+		PRINT '---------'
+
+		FETCH NEXT FROM @c INTO	@maCauThu, @hoTen_NEW, @hoTen_OLD
+	END
+
+	CLOSE @c
+	DEALLOCATE @c
+END
+GO
